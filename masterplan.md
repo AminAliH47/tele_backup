@@ -16,14 +16,14 @@
 
 ## 3. Core Features and Functionality
 
-* **Backup Sources:**
+* **Backup Sourcess:**
   * **Databases:** PostgreSQL, MySQL/MariaDB, SQLite.
   * **Docker Volumes:** Any named Docker volume.
 * **Backup Formats:**
   * Databases: Raw `.sql` dump or a compressed `.tar.gz` archive.
   * Volumes: Compressed `.tar.gz` archive.
 * **Scheduling:** Powerful, cron-based scheduling for each backup job, powered by Celery Beat.
-* **Destination:** Securely upload backup files to one or more user-configured Telegram channels.
+* **Destinations:** Securely upload backup files to one or more user-configured Telegram channels.
 * **Notifications:**
   * Send a message to Telegram upon successful backup completion, including the file name and size.
   * Send an immediate, clear alert to Telegram upon any backup failure, including the error reason.
@@ -45,23 +45,23 @@
 
 The application will be structured around models split into logical apps:
 
-1. **`Destination`** (in `destinations` app): Represents a Telegram channel.
+1. **`Destinations`** (in `destinations` app): Represents a Telegram channel.
    * `name`: A friendly name (e.g., "My Project Channel").
    * `telegram_bot_token`: The bot's API token (encrypted).
    * `telegram_channel_id`: The target channel's ID (encrypted).
-2. **`Source`** (in `sources` app): Represents what to back up.
+2. **`Sources`** (in `sources` app): Represents what to back up.
    * `name`: A friendly name (e.g., "Production DB").
    * `type`: Choice of `Database` or `Volume`.
    * **If Database:** `db_type` (Postgres, MySQL, SQLite), `db_host`, `db_port`, `db_name`, `db_user`, `db_password` (encrypted).
    * **If Volume:** `volume_name`.
-3. **`BackupJob`** (in `jobs` app): The central orchestrator.
-   * `source`: ForeignKey to `sources.Source`.
-   * `destination`: ForeignKey to `destinations.Destination`.
+3. **`BackupJobs`** (in `jobs` app): The central orchestrator.
+   * `source`: ForeignKey to `sources.Sources`.
+   * `destination`: ForeignKey to `destinations.Destinations`.
    * `schedule`: A cron expression string (e.g., `0 2 * * *`).
    * `output_format`: Choice of `.sql` or `.tar.gz`.
    * `is_active`: Boolean to easily enable/disable jobs.
-4. **`ExecutionLog`** (in `jobs` app): A record of each run.
-   * `job`: ForeignKey to `jobs.BackupJob`.
+4. **`ExecutionLogs`** (in `jobs` app): A record of each run.
+   * `job`: ForeignKey to `jobs.BackupJobs`.
    * `timestamp`: The time of the execution.
    * `status`: Choice of `SUCCESS`, `FAILED`.
    * `details`: Text field for storing the output message or error details.
@@ -84,20 +84,20 @@ tele-backup/
     │   ├── admin.py
     │   ├── apps.py
     │   ├── migrations/
-    │   ├── models.py        # Contains Destination model
+    │   ├── models.py        # Contains Destinations model
     │   └── services/
     │       └── telegram_sender.py
     ├── jobs/                # App for managing jobs, scheduling, and logs
     │   ├── admin.py
     │   ├── apps.py
     │   ├── migrations/
-    │   ├── models.py        # Contains BackupJob, ExecutionLog models
+    │   ├── models.py        # Contains BackupJobs, ExecutionLogs models
     │   └── tasks.py         # Celery tasks are defined here
     ├── sources/             # App for managing backup sources
     │   ├── admin.py
     │   ├── apps.py
     │   ├── migrations/
-    │   ├── models.py        # Contains Source model
+    │   ├── models.py        # Contains Sources model
     │   └── services/
     │       └── backup_runner.py
     ├── config/      # The Django project configuration
@@ -124,9 +124,9 @@ tele-backup/
 * [ ] Set up Django project with the proposed multi-app directory structure.
 * [ ] Initialize Docker and Docker Compose configuration for local development.
 * [ ] Create the `destinations`, `sources`, and `jobs` Django apps and add them to `INSTALLED_APPS`.
-* [ ] Define the `Destination` model in the `destinations` app.
-* [ ] Define the `Source` model in the `sources` app.
-* [ ] Define the `BackupJob` and `ExecutionLog` models in the `jobs` app.
+* [ ] Define the `Destinations` model in the `destinations` app.
+* [ ] Define the `Sources` model in the `sources` app.
+* [ ] Define the `BackupJobs` and `ExecutionLogs` models in the `jobs` app.
 * [ ] Register all models with the Django admin.
 * [ ] Set up i18n configurations in `settings.py`.
 
@@ -139,9 +139,9 @@ tele-backup/
 ### Phase 3: Scheduling and Task Integration
 
 * [ ] Integrate Celery and Celery Beat into the Django project.
-* [ ] Create a Celery `task` in `jobs/tasks.py` that takes a `BackupJob` ID as an argument.
-* [ ] The task will fetch job details, call the `backup_runner` service, and store the result in an `ExecutionLog`.
-* [ ] Implement the Celery Beat scheduler to dynamically manage schedules based on `BackupJob` entries.
+* [ ] Create a Celery `task` in `jobs/tasks.py` that takes a `BackupJobs` ID as an argument.
+* [ ] The task will fetch job details, call the `backup_runner` service, and store the result in an `ExecutionLogs`.
+* [ ] Implement the Celery Beat scheduler to dynamically manage schedules based on `BackupJobs` entries.
 
 ### Phase 4: Telegram Integration
 
@@ -170,7 +170,7 @@ tele-backup/
 
 ## 10. Future Expansion Possibilities
 
-* **More Destinations:** Add support for other backup destinations like AWS S3, Dropbox, or Google Drive. The `destinations` app is already structured to make this easy.
-* **More Sources:** Add support for other databases like MongoDB or Redis within the `sources` app.
-* **Retention Policy Enforcement:** Add a Celery task that runs daily to clean up old backups from Telegram channels based on a policy set in the `BackupJob`.
+* **More Destinationss:** Add support for other backup destinations like AWS S3, Dropbox, or Google Drive. The `destinations` app is already structured to make this easy.
+* **More Sourcess:** Add support for other databases like MongoDB or Redis within the `sources` app.
+* **Retention Policy Enforcement:** Add a Celery task that runs daily to clean up old backups from Telegram channels based on a policy set in the `BackupJobs`.
 * **Web UI:** A simple front-end dashboard (using HTMX or a minimal JS framework) outside of the admin panel for viewing backup status.
