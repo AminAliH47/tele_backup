@@ -40,9 +40,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
+    # Third-party apps
+    'django_celery_beat',
+
     # Local apps
-    'destinations.apps.DestinationssConfig',
-    'sources.apps.SourcessConfig',
+    'destinations.apps.DestinationsConfig',
+    'sources.apps.SourcesConfig',
     'jobs.apps.JobsConfig',
 ]
 
@@ -143,11 +146,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery Configuration
 CELERY_BROKER_URL = envs.MESSAGE_BROKER_URL
+CELERY_RESULT_BACKEND = envs.MESSAGE_BROKER_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
+
+# Celery Beat Configuration
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BEAT_SCHEDULE_FILENAME = 'celerybeat-schedule'
 
 # Custom settings
 ENCRYPTION_KEY = envs.TB_ENCRYPTION_KEY
