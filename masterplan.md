@@ -16,7 +16,7 @@
 
 ## 3. Core Features and Functionality
 
-* **Backup Sourcess:**
+* **Backup Sources:**
   * **Databases:** PostgreSQL, MySQL/MariaDB, SQLite.
   * **Docker Volumes:** Any named Docker volume.
 * **Backup Formats:**
@@ -40,6 +40,7 @@
 * **Dependencies:**
   * `python-telegram-bot`: To interact with the Telegram Bot API.
   * `cryptography`: For encrypting and decrypting secrets.
+  * `croniter`: To parse cron expressions in the application logic.
 
 ## 5. Conceptual Data Model
 
@@ -136,19 +137,20 @@ tele-backup/
 * [ ] Implement functions for PostgreSQL, MySQL, SQLite, and Docker Volume backups.
 * [ ] Write unit tests for each backup method.
 
-### Phase 3: Scheduling and Task Integration
-
-* [ ] Integrate Celery and Celery Beat into the Django project.
-* [ ] Create a Celery `task` in `jobs/tasks.py` that takes a `BackupJobs` ID as an argument.
-* [ ] The task will fetch job details, call the `backup_runner` service, and store the result in an `ExecutionLogs`.
-* [ ] Implement the Celery Beat scheduler to dynamically manage schedules based on `BackupJobs` entries.
-
-### Phase 4: Telegram Integration
+### Phase 3: Telegram Integration
 
 * [ ] Create the `telegram_sender.py` service in the `destinations` app.
 * [ ] Implement functions to upload a file and send a text message to Telegram.
-* [ ] Integrate these functions into the Celery task in the `jobs` app.
+* [ ] Create a temporary management command to test the end-to-end flow (backup + upload).
 * [ ] Ensure proper error handling for Telegram API interactions.
+
+### Phase 4: Scheduling and Task Integration
+
+* [ ] Integrate Celery and Celery Beat into the Django project.
+* [ ] Create a primary Celery task, `execute_backup_job`, that takes a `BackupJob` ID. This task will perform the backup, send the file to Telegram, and create an `ExecutionLog`. It is designed to be triggered on-demand.
+* [ ] Create a second Celery Beat task, `check_due_jobs`, configured in `settings.py` to run on a one-minute schedule.
+* [ ] In the `check_due_jobs` task, query all active `BackupJob`s. For each job, use a library like `croniter` to parse its `schedule` field and determine if it should run at the current minute.
+* [ ] If a job is due, `check_due_jobs` will asynchronously call the `execute_backup_job` task with the appropriate `BackupJob` ID.
 
 ### Phase 5: Polishing, Documentation, and Release
 
@@ -170,7 +172,7 @@ tele-backup/
 
 ## 10. Future Expansion Possibilities
 
-* **More Destinationss:** Add support for other backup destinations like AWS S3, Dropbox, or Google Drive. The `destinations` app is already structured to make this easy.
-* **More Sourcess:** Add support for other databases like MongoDB or Redis within the `sources` app.
-* **Retention Policy Enforcement:** Add a Celery task that runs daily to clean up old backups from Telegram channels based on a policy set in the `BackupJobs`.
+* **More Destinations:** Add support for other backup destinations like AWS S3, Dropbox, or Google Drive. The `destinations` app is already structured to make this easy.
+* **More Sources:** Add support for other databases like MongoDB or Redis within the `sources` app.
+* **Retention Policy Enforcement:** Add a Celery task that runs daily to clean up old backups from Telegram channels based on a policy set in the `BackupJob`.
 * **Web UI:** A simple front-end dashboard (using HTMX or a minimal JS framework) outside of the admin panel for viewing backup status.
