@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 from config import envs
 
@@ -143,11 +144,51 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery Configuration
 CELERY_BROKER_URL = envs.MESSAGE_BROKER_URL
+CELERY_RESULT_BACKEND = envs.MESSAGE_BROKER_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 
+# Celery Beat Configuration
+CELERY_BEAT_SCHEDULE = {
+    'check-due-jobs': {
+        'task': 'jobs.tasks.check_due_jobs',
+        'schedule': 60.0,  # Run every 60 seconds (1 minute)
+        'options': {
+            'expires': 50.0,  # Expire if not executed within 50 seconds
+        }
+    },
+    'cleanup-old-logs': {
+        'task': 'jobs.tasks.cleanup_old_execution_logs',
+        'schedule': 86400.0,  # Run daily (24 hours)
+        'kwargs': {'days_to_keep': 30},
+        'options': {
+            'expires': 3600.0,  # Expire if not executed within 1 hour
+        }
+    },
+}
+
+# Task execution settings
+CELERY_TASK_ROUTES = {
+    'jobs.tasks.execute_backup_job': {'queue': 'backup_jobs'},
+    'jobs.tasks.check_due_jobs': {'queue': 'scheduler'},
+    'jobs.tasks.cleanup_old_execution_logs': {'queue': 'maintenance'},
+}
+
+# Task time limits
+CELERY_TASK_SOFT_TIME_LIMIT = 3600  # 1 hour soft limit
+CELERY_TASK_TIME_LIMIT = 7200  # 2 hour hard limit
+
+# Worker settings
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 50
+
+# Result backend settings
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+CELERY_TASK_IGNORE_RESULT = False
+
 # Custom settings
-ENCRYPTION_KEY = envs.TB_ENCRYPTION_KEY
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY')

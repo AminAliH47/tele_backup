@@ -5,8 +5,8 @@ from django.apps import apps
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'src.config.settings')
 
-app = Celery('crawlaco')
-app.conf.enable_utc = False
+# Create the Celery app instance
+app = Celery('tele_backup')
 
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
