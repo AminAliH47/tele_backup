@@ -1,0 +1,327 @@
+version: '3.8'
+
+# Tele-Backup Production Docker Compose Configuration
+# This configuration is optimized for production deployment
+
+services:
+  # ==============================================================================
+  # Main Django Application
+  # ==============================================================================
+  tele-backup:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: tele-backup-web
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=${TB_SECRET_KEY}
+      - TB_DEBUG=${TB_DEBUG:-False}
+      - TB_ALLOWED_HOSTS=${TB_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - TB_CSRF_TRUSTED_ORIGINS=${TB_CSRF_TRUSTED_ORIGINS:-}
+      - TB_TZ=${TB_TZ:-UTC}
+      
+      # Database Configuration
+      - TB_DB_ENGINE=${TB_DB_ENGINE:-django.db.backends.sqlite3}
+      - TB_DB_NAME=${TB_DB_NAME:-/app/db/db.sqlite3}
+      - TB_DB_USER=${TB_DB_USER:-}
+      - TB_DB_PASSWORD=${TB_DB_PASSWORD:-}
+      - TB_DB_HOST=${TB_DB_HOST:-}
+      - TB_DB_PORT=${TB_DB_PORT:-}
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security
+      - TB_ENCRYPTION_KEY=${TB_ENCRYPTION_KEY}
+      
+      # Optional superuser creation
+      - DJANGO_SUPERUSER_USERNAME=${DJANGO_SUPERUSER_USERNAME:-}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-}
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-}
+      
+      # Application Configuration
+      - TB_BACKUP_RETENTION_DAYS=${TB_BACKUP_RETENTION_DAYS:-30}
+      - TB_MAX_FILE_SIZE_MB=${TB_MAX_FILE_SIZE_MB:-2000}
+      - TB_BACKUP_TIMEOUT=${TB_BACKUP_TIMEOUT:-3600}
+      - TB_LOG_LEVEL=${TB_LOG_LEVEL:-INFO}
+      
+    volumes:
+      # Database storage (for SQLite)
+      - ./data/db:/app/db
+      
+      # Static files
+      - ./data/staticfiles:/app/staticfiles
+      
+      # Backup files storage
+      - ./data/backups:/app/backups
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+      # Docker socket for volume backups (SECURITY CONSIDERATION)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+    ports:
+      - "${TB_PORT:-8000}:8000"
+    
+    depends_on:
+      - redis
+      
+    networks:
+      - tele-backup-network
+      
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/admin/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================================================
+  # Celery Worker
+  # ==============================================================================
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: tele-backup-worker
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=${TB_SECRET_KEY}
+      - TB_DEBUG=${TB_DEBUG:-False}
+      - TB_TZ=${TB_TZ:-UTC}
+      
+      # Database Configuration
+      - TB_DB_ENGINE=${TB_DB_ENGINE:-django.db.backends.sqlite3}
+      - TB_DB_NAME=${TB_DB_NAME:-/app/db/db.sqlite3}
+      - TB_DB_USER=${TB_DB_USER:-}
+      - TB_DB_PASSWORD=${TB_DB_PASSWORD:-}
+      - TB_DB_HOST=${TB_DB_HOST:-}
+      - TB_DB_PORT=${TB_DB_PORT:-}
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security
+      - TB_ENCRYPTION_KEY=${TB_ENCRYPTION_KEY}
+      
+      # Worker Configuration
+      - CELERY_WORKER_CONCURRENCY=${CELERY_WORKER_CONCURRENCY:-2}
+      - CELERY_WORKER_PREFETCH_MULTIPLIER=${CELERY_WORKER_PREFETCH_MULTIPLIER:-4}
+      - CELERY_LOG_LEVEL=${CELERY_LOG_LEVEL:-info}
+      
+      # Application Configuration
+      - TB_BACKUP_RETENTION_DAYS=${TB_BACKUP_RETENTION_DAYS:-30}
+      - TB_MAX_FILE_SIZE_MB=${TB_MAX_FILE_SIZE_MB:-2000}
+      - TB_BACKUP_TIMEOUT=${TB_BACKUP_TIMEOUT:-3600}
+      - TB_LOG_LEVEL=${TB_LOG_LEVEL:-INFO}
+      
+    volumes:
+      # Database storage (for SQLite)
+      - ./data/db:/app/db
+      
+      # Backup files storage
+      - ./data/backups:/app/backups
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+      # Docker socket for volume backups (SECURITY CONSIDERATION)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+    depends_on:
+      - redis
+      - tele-backup
+      
+    networks:
+      - tele-backup-network
+      
+    healthcheck:
+      test: ["CMD", "celery", "-A", "config", "inspect", "ping"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================================================
+  # Celery Beat Scheduler
+  # ==============================================================================
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scheduler
+    container_name: tele-backup-scheduler
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=${TB_SECRET_KEY}
+      - TB_DEBUG=${TB_DEBUG:-False}
+      - TB_TZ=${TB_TZ:-UTC}
+      
+      # Database Configuration
+      - TB_DB_ENGINE=${TB_DB_ENGINE:-django.db.backends.sqlite3}
+      - TB_DB_NAME=${TB_DB_NAME:-/app/db/db.sqlite3}
+      - TB_DB_USER=${TB_DB_USER:-}
+      - TB_DB_PASSWORD=${TB_DB_PASSWORD:-}
+      - TB_DB_HOST=${TB_DB_HOST:-}
+      - TB_DB_PORT=${TB_DB_PORT:-}
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security
+      - TB_ENCRYPTION_KEY=${TB_ENCRYPTION_KEY}
+      
+      # Scheduler Configuration
+      - CELERY_LOG_LEVEL=${CELERY_LOG_LEVEL:-info}
+      
+    volumes:
+      # Database storage (for SQLite)
+      - ./data/db:/app/db
+      
+      # Beat schedule storage
+      - ./data/celerybeat:/app/celerybeat
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+    depends_on:
+      - redis
+      - tele-backup
+      
+    networks:
+      - tele-backup-network
+      
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/celerybeat/celerybeat.pid"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 40s
+
+  # ==============================================================================
+  # Redis Message Broker
+  # ==============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: tele-backup-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - tele-backup-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# ==============================================================================
+# Optional: PostgreSQL Database (uncomment if using PostgreSQL)
+# ==============================================================================
+# postgres:
+#   image: postgres:15-alpine
+#   container_name: tele-backup-postgres
+#   restart: unless-stopped
+#   environment:
+#     - POSTGRES_DB=${TB_DB_NAME:-tele_backup}
+#     - POSTGRES_USER=${TB_DB_USER:-postgres}
+#     - POSTGRES_PASSWORD=${TB_DB_PASSWORD}
+#     - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+#   volumes:
+#     - postgres_data:/var/lib/postgresql/data
+#     - ./backups/postgres:/backups
+#   networks:
+#     - tele-backup-network
+#   healthcheck:
+#     test: ["CMD-SHELL", "pg_isready -U ${TB_DB_USER:-postgres}"]
+#     interval: 30s
+#     timeout: 10s
+#     retries: 3
+#     start_period: 10s
+
+# ==============================================================================
+# Optional: MySQL Database (uncomment if using MySQL)
+# ==============================================================================
+# mysql:
+#   image: mysql:8.0
+#   container_name: tele-backup-mysql
+#   restart: unless-stopped
+#   environment:
+#     - MYSQL_DATABASE=${TB_DB_NAME:-tele_backup}
+#     - MYSQL_USER=${TB_DB_USER:-mysql}
+#     - MYSQL_PASSWORD=${TB_DB_PASSWORD}
+#     - MYSQL_ROOT_PASSWORD=${TB_DB_ROOT_PASSWORD}
+#   volumes:
+#     - mysql_data:/var/lib/mysql
+#     - ./backups/mysql:/backups
+#   networks:
+#     - tele-backup-network
+#   healthcheck:
+#     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+#     interval: 30s
+#     timeout: 10s
+#     retries: 3
+#     start_period: 30s
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  redis_data:
+    driver: local
+# postgres_data:
+#   driver: local
+# mysql_data:
+#   driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  tele-backup-network:
+    driver: bridge
+
+# ==============================================================================
+# Configuration Notes
+# ==============================================================================
+# 
+# Environment Variables:
+# - Copy .env.example to .env and customize values
+# - Required: TB_SECRET_KEY, TB_ENCRYPTION_KEY
+# - Optional: Database credentials if using external DB
+#
+# Volume Mounts:
+# - ./data/db: SQLite database storage
+# - ./data/backups: Generated backup files
+# - ./data/logs: Application logs
+# - /var/run/docker.sock: Docker socket for volume backups (read-only)
+#
+# Security Considerations:
+# - Docker socket mount provides significant system access
+# - Use strong, unique secret keys
+# - Ensure backup files directory has proper permissions
+# - Consider using external database for production
+#
+# Scaling:
+# - Multiple worker containers: docker-compose up --scale celery-worker=3
+# - Load balancer for web containers (add nginx/traefik)
+# - External Redis cluster for high availability
+#
+# Monitoring:
+# - Health checks are configured for all services
+# - View logs: docker-compose logs -f [service-name]
+# - Monitor resource usage: docker stats
+#
+# Maintenance:
+# - Backup ./data directory regularly
+# - Monitor disk space in ./data/backups
+# - Rotate logs in ./data/logs
+# - Update images regularly: docker-compose pull && docker-compose up -d 

@@ -1,0 +1,316 @@
+version: '3.8'
+
+# Tele-Backup Development Docker Compose Configuration
+# This configuration is optimized for local development with hot reloading
+
+services:
+  # ==============================================================================
+  # Django Development Server
+  # ==============================================================================
+  tele-backup-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tele-backup-dev
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=dev-secret-key-change-in-production
+      - TB_DEBUG=True
+      - TB_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - TB_TZ=UTC
+      
+      # Database Configuration (SQLite for simplicity)
+      - TB_DB_ENGINE=django.db.backends.sqlite3
+      - TB_DB_NAME=/app/db/db.sqlite3
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security (development key)
+      - TB_ENCRYPTION_KEY=dev-encryption-key-generate-for-production
+      
+      # Development Configuration
+      - ENABLE_DEBUG_TOOLBAR=True
+      - ENABLE_DJANGO_EXTENSIONS=True
+      
+      # Application Configuration
+      - TB_BACKUP_RETENTION_DAYS=7
+      - TB_MAX_FILE_SIZE_MB=100
+      - TB_BACKUP_TIMEOUT=300
+      - TB_LOG_LEVEL=DEBUG
+      
+    volumes:
+      # Source code (for hot reloading)
+      - ./src:/app
+      - ./manage.py:/app/manage.py
+      
+      # Database storage
+      - ./data/db:/app/db
+      
+      # Backup files storage
+      - ./data/backups:/app/backups
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+      # Docker socket for volume backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+    ports:
+      - "8000:8000"
+    
+    depends_on:
+      - redis
+      
+    networks:
+      - tele-backup-dev-network
+      
+    command: python manage.py runserver 0.0.0.0:8000
+
+  # ==============================================================================
+  # Celery Worker (Development)
+  # ==============================================================================
+  celery-worker-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tele-backup-worker-dev
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=dev-secret-key-change-in-production
+      - TB_DEBUG=True
+      - TB_TZ=UTC
+      
+      # Database Configuration
+      - TB_DB_ENGINE=django.db.backends.sqlite3
+      - TB_DB_NAME=/app/db/db.sqlite3
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security
+      - TB_ENCRYPTION_KEY=dev-encryption-key-generate-for-production
+      
+      # Worker Configuration
+      - CELERY_WORKER_CONCURRENCY=1
+      - CELERY_LOG_LEVEL=debug
+      
+      # Application Configuration
+      - TB_BACKUP_RETENTION_DAYS=7
+      - TB_MAX_FILE_SIZE_MB=100
+      - TB_BACKUP_TIMEOUT=300
+      - TB_LOG_LEVEL=DEBUG
+      
+    volumes:
+      # Source code (for hot reloading)
+      - ./src:/app
+      - ./manage.py:/app/manage.py
+      
+      # Database storage
+      - ./data/db:/app/db
+      
+      # Backup files storage
+      - ./data/backups:/app/backups
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+      # Docker socket for volume backups
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      
+    depends_on:
+      - redis
+      - tele-backup-dev
+      
+    networks:
+      - tele-backup-dev-network
+      
+    command: celery -A config worker --loglevel=debug --concurrency=1
+
+  # ==============================================================================
+  # Celery Beat Scheduler (Development)
+  # ==============================================================================
+  celery-beat-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: tele-backup-scheduler-dev
+    restart: unless-stopped
+    environment:
+      # Django Configuration
+      - TB_SECRET_KEY=dev-secret-key-change-in-production
+      - TB_DEBUG=True
+      - TB_TZ=UTC
+      
+      # Database Configuration
+      - TB_DB_ENGINE=django.db.backends.sqlite3
+      - TB_DB_NAME=/app/db/db.sqlite3
+      
+      # Message Broker
+      - MESSAGE_BROKER_URL=redis://redis:6379/0
+      
+      # Security
+      - TB_ENCRYPTION_KEY=dev-encryption-key-generate-for-production
+      
+      # Scheduler Configuration
+      - CELERY_LOG_LEVEL=debug
+      
+    volumes:
+      # Source code (for hot reloading)
+      - ./src:/app
+      - ./manage.py:/app/manage.py
+      
+      # Database storage
+      - ./data/db:/app/db
+      
+      # Beat schedule storage
+      - ./data/celerybeat:/app/celerybeat
+      
+      # Application logs
+      - ./data/logs:/app/logs
+      
+    depends_on:
+      - redis
+      - tele-backup-dev
+      
+    networks:
+      - tele-backup-dev-network
+      
+    command: celery -A config beat --loglevel=debug --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+  # ==============================================================================
+  # Redis Message Broker
+  # ==============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: tele-backup-redis-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"  # Expose for development tools
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - tele-backup-dev-network
+
+  # ==============================================================================
+  # Redis Commander (Development Tool)
+  # ==============================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: tele-backup-redis-ui
+    restart: unless-stopped
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - tele-backup-dev-network
+
+  # ==============================================================================
+  # Test Database Services (for testing backup functionality)
+  # ==============================================================================
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: tele-backup-test-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=test_database
+      - POSTGRES_USER=test_user
+      - POSTGRES_PASSWORD=test_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+    networks:
+      - tele-backup-dev-network
+
+  test-mysql:
+    image: mysql:8.0
+    container_name: tele-backup-test-mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_DATABASE=test_database
+      - MYSQL_USER=test_user
+      - MYSQL_PASSWORD=test_password
+      - MYSQL_ROOT_PASSWORD=root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - test_mysql_data:/var/lib/mysql
+    networks:
+      - tele-backup-dev-network
+
+  # ==============================================================================
+  # Test Volume (for testing volume backups)
+  # ==============================================================================
+  test-app:
+    image: nginx:alpine
+    container_name: tele-backup-test-app
+    restart: unless-stopped
+    volumes:
+      - test_app_data:/usr/share/nginx/html
+    networks:
+      - tele-backup-dev-network
+    command: sh -c "echo 'Test data for volume backup' > /usr/share/nginx/html/test.txt && nginx -g 'daemon off;'"
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  redis_dev_data:
+    driver: local
+  test_postgres_data:
+    driver: local
+  test_mysql_data:
+    driver: local
+  test_app_data:
+    driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  tele-backup-dev-network:
+    driver: bridge
+
+# ==============================================================================
+# Development Notes
+# ==============================================================================
+#
+# Getting Started:
+# 1. Copy .env.example to .env.dev
+# 2. Run: docker-compose -f docker-compose.dev.yml up -d
+# 3. Access web interface: http://localhost:8000
+# 4. Access Redis UI: http://localhost:8081
+#
+# Development Workflow:
+# - Code changes in ./src are reflected immediately (hot reload)
+# - Database persists in ./data/db
+# - Logs available in ./data/logs
+# - Use debug toolbar for performance analysis
+#
+# Testing Backup Sources:
+# - PostgreSQL: localhost:5432, db: test_database, user: test_user, pass: test_password
+# - MySQL: localhost:3306, db: test_database, user: test_user, pass: test_password
+# - Volume: test_app_data (contains test.txt file)
+#
+# Useful Commands:
+# - View logs: docker-compose -f docker-compose.dev.yml logs -f [service]
+# - Restart services: docker-compose -f docker-compose.dev.yml restart
+# - Shell access: docker-compose -f docker-compose.dev.yml exec tele-backup-dev bash
+# - Run tests: docker-compose -f docker-compose.dev.yml exec tele-backup-dev python manage.py test
+# - Create superuser: docker-compose -f docker-compose.dev.yml exec tele-backup-dev python manage.py createsuperuser
+#
+# Debugging:
+# - All services run with debug logging
+# - Django debug toolbar enabled
+# - Redis Commander for broker inspection
+# - Source code mounted for live editing 
